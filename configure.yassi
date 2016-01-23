@@ -4,18 +4,22 @@
 #	Project Info
 #
  	APP_NAME=xrandr-tui
- 	APP_VER=0.3
+ 	APP_VER=0.3.1
  	APP_LIC=GPLv3+
- #	APP_HOMEPAGE="mywebsite.web"
+ 	APP_HOMEPAGE="https://github.com/sri-arjuna/xrandr-tui"
  	AUTHOR_HOMEPAGE="http://linux-scripter.blogspot.ch"
  	AUTHOR_NAME="Simon Arjuna Erat (sea)"
  	AUTHOR_EMAIL="erat.simon æ gmail.com"
- 	#MAINTAINER_NAME=""
- 	#MAINTAINER_EMAIL=""
- 	BUGTRACKER="https://github.com/sri-arjuna/xrandr-tui/issues"
+ 	BUGTRACKER="$APP_HOMEPAGE/issues"
+ 	doTUI=true
 #
 #	Default target dirs
 #
  	BINDIR=bin
  	DOCDIR=docs
- 
+ 	MAN1DIR="$APP_NAME.1"
+#
+#	Docs
+#
+ 	REQS[make]=txt2man
+ 	MAKE[0]="bin/$APP_NAME -h > $APP_NAME.1"
