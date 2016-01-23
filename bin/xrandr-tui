@@ -25,14 +25,25 @@
 	! $XDG_SOURCED && source "$XDG_DIRS"
 	LIST_DEFAULT_RESOLUTIONS_BOX="640x480 800x600 1024x768 1280x1024"
 	LIST_DEFAULT_RESOLUTIONS_HD="640x360 854x480 1280x720 1920x1080 2560x1440 3840x2160"
-	LIST_DEFAULT_RESOLUTIONS_WIDE="720x400 720x576 1152x864 1368x768 1280x960 1440x900 1400x1050 1600x1200"
+	LIST_DEFAULT_RESOLUTIONS_WIDE="720x400 720x576 1152x864 1368x768 1280x960 1440x900 1400x1050 1680x1050 1600x1200"
 	DEFAULT_DISPLAY=""
 	DEFAULT_RESOLUTION=""
 	SHOW_HZ=false
 	SKIP_CHECK=${SKIP_CHECK:-false}
 #
+#	Script info
+#
+	script_name="xrandr-tui"
+	script_version=0.3.1
+	script_author="Simon Arjuna Erat (sea)"
+	script_homepage="https://github.com/sri-arjuna/xrandr-tui"
+	script_authors=""	# Add your names here, seperated by a comma ','
+#
 #	Variables : Messages
 #
+	MSG_HEADER_LEFT="$script_name ($script_version)"
+	MSG_HEADER_RIGHT="Brought to you by (sea)" # & ${script_authors:-noone else}"
+	MSG_TITLE="Current setup"
 	MSG_MENU_TITLE="Welcome to the main menu"
 	MSG_MENU_INTRO="What is your new setup?"
 	MSG_CONFIG_UNUSED_DISPLAYS="With these unused (but connected) displays:"
@@ -60,20 +71,10 @@
 	MSG_DEFAULT_RES="What resolution shall be set when resetting?"
 	MSG_DEFAULT_RES_=""
 	MSG_DEFAULT_HZ="Use the refresh rate (hz) of the created modes for the name as well?"
-	MSG_HEADER_LEFT="$script_name ($script_version)"
-	MSG_HEADER_RIGHT="Brought to you by (sea) & ${script_authors:-noone else}"
-	MSG_TITLE="Current setup"
+	MSG_MODE_ADD_TITLE="Add a new mode to:"
 	MSG_MODE_ADD_KIND="What kind of mode would you like to add?"
 	MSG_MODE_ADD_DISPLAY="Which display shall be used?"
-	
-#
-#	Script info
-#
-	script_name="xrandr-tui"
-	script_version=0.3
-	script_author="Simon Arjuna Erat (sea)"
-	script_authors=""	# Add your names here, seperated by a comma ','
-	script_homepage=""
+	MSG_MODE_ADD_EXISTS="The mode you wanted to add does already exist"
 #
 #	Variables
 #
@@ -106,19 +107,17 @@
 	# Switches the the active to off, and actives the off one
 		tui-title "${FUNCNAME/task\.}"
 		cur=$(screen.name)
+		
+		MSG_SWITCH_DISP_CUR="The current display is:"
+		MSG_SWITCH_DISP_CHG="Do you want to use this?"
+		
+		tui-print -E "$MSG_SWITCH_DISP_CUR $cur"
+		! tui-yesno "$MSG_SWITCH_DISP_CHG" && \
+			
+		
 		tui-print -S $? "$MSG_DETECTED_SCREEN_SRC" "$cur"
 		
-		new=$(list.screens);RET=$?
-		new="$(echo ${new/$cur})"
-		tui-print -S $RET "$MSG_DETECTED_SCREEN_TRGT" "$new"
-		
-		tui-yesno "$MSG_DETECTED_SCREEN_MODE" && \
-			MODE=$(list.modes $new | head -n1) || \
-			{ tui-print -T "$MSG_SWITCH_RES" "$new" ;MODE=$(tui-select $(list.modes $new));}
-		
-		(set -x;$XR --output $cur --off)
-		(set -x;$XR --output $new --mode $MODE)
-		exit $?
+		job.switch "$cur"
 	}
 	task.resolution() { 
 	# Change the resolution for the current active display
@@ -146,11 +145,11 @@
 		
 		job.reset.all
 		sleep 0.5
-		$XR --output $src
+		(set -x;$XR --output $src)
 		for passed in ${ar_passed[@]}
 		do
-			$XR --output $passed --same-as $src --mode $(list.modes $passed|head -n1)
-			tui-print -S $? "$MSG_DETECTED_SCREEN_TRGT $passed"
+			(set -x;$XR --output $passed --same-as $src --mode $(list.modes $passed|head -n1))
+			tui-status $? "$MSG_DETECTED_SCREEN_TRGT $passed"
 		
 		done
 		exit $?
@@ -174,18 +173,14 @@
 		exit $?
 	}
 	task.mode.add() {
+	# Add a new mode to current output
 	#
-	#
+		tui-title "$MSG_MODE_ADD_TITLE $(screen.name)"
 		local list="box hd wide"
 		prefix=LIST_DEFAULT_RESOLUTIONS
 		data.cvt.get() { DATA_CVT=$(cvt ${res/x/" "} ${DEFAULT_HZ:-60}) ;}
 		data.cvt.show() { echo "$DATA_CVT" ;}
 		
-	#	tui-print -E 
-	#	tui-print -E "$MSG_MODE_ADD_DISPLAY"
-	#	display=$(tui-select $(list.screens.connected))
-		
-		tui-print -E 
 		tui-print -E "$MSG_MODE_ADD_KIND"
 		item=$(tui-select $list)
 		tmp="${prefix}_${item^^}"
@@ -196,29 +191,71 @@
 		res=$(tui-select $list_items)
 		
 		data.cvt.get
-		mode_lbl="$(data.cvt.show|$AWK '/Modeline/ {print $2}')"
-		mode_numbers="$(data.cvt.show|$AWK '/Modeline/ {print $3,$4,$5,$6,$7,$8,$9,$10,$12,$13}')"
+		mode_lbl="$(data.cvt.show|$AWK '/Modeline/ {print $2}'|$SED s,\",,g)"
+		mode_numbers="$(data.cvt.show|$AWK '/Modeline/ {print $3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13}')"
 		
-		echo $XR --newmode $mode_lbl $mode_numbers
-		echo xrandr --newmode "1368x768_60.00" 85.25 1368 1440 1576 1784 768 771 781 798 -hsync +vsync
-		
+		list.modes $(screen.name) | $GREP -q "${mode_lbl/_*}" && \
+			tui-print -S 1 "$MSG_MODE_ADD_EXISTS" && \
+			exit 1
+		$SHOW_HZ || mode_lbl="${mode_lbl/_*}"
+		$XR --newmode $mode_lbl $mode_numbers
+		$XR --addmode default $mode_lbl
+		$XR --output default --mode $mode_lbl
 	}
 	#task.multiline() { tui-title "TODO ${FUNCNAME/task\.}" ; tui-list -1 $@ ; }
-	task.reset() { job.reset.all ; $XR --output $DEFAULT_DISPLAY --mode $DEFAULT_RESOLUTION ; }
+	task.reset() { job.reset.all ; $XR --output $DEFAULT_DISPLAY --mode $DEFAULT_RESOLUTION --primary ; }
 	job.reset.all() { for d in $(list.screens.connected);do $XR --output $d --off --noprimary;done;}
 	job.config() { tui-conf-editor -H "$script_name ($script_version)" --write-no-exist --option DEFAULT_DISPLAY --values "$($0 --list-connected)" --default "$(screen.name)" --option DEFAULT_RESOLUTION --values "$(list.modes $(tui-conf-get $CONF DEFAULT_DISPLAY))" --default "$(screen.size)" --option DEFAULT_HZ --values "30 60 75 100" --default 60 --option SHOW_HZ --values "true false" --default "false" "$CONF" ;}
 	job.firsttime() { tui-bol-dir "$XCD";touch "$CONF";job.config;}
+	job.switch() { # CUR_SCRN $(screen.name)
+	# Expects two connected displays
+	# Switches the the active to off, and actives the off one
+		tui-print -T "${FUNCNAME/task\.}"
+		cur="$1" ; [ -n "$cur" ] 
+		tui-status $? "$MSG_DETECTED_SCREEN_SRC" "$cur" || exit 1
+		
+		new=$(list.screens);RET=$?
+		new="$(echo ${new/$cur})"
+		tui-print -S $RET "$MSG_DETECTED_SCREEN_TRGT" "$new"
+		
+		tui-yesno "$MSG_DETECTED_SCREEN_MODE" && \
+			MODE=$(list.modes $new | head -n1) || \
+			{ tui-print -T "$MSG_SWITCH_RES" "$new" ;MODE=$(tui-select $(list.modes $new));}
+		
+		(set -x;$XR --output $cur --off)
+		(set -x;$XR --output $new --mode $MODE)
+		exit $RET
+	}
 	# Show repeated stuff
 	show.config.current() { C=0;while [ -n "${AR_SCRN[$C]}" ] ;do tui-print -E "${AR_SCRN[$C]}" "${AR_RES[$C]}";((C++));done;tui-print -E "$MSG_CONFIG_UNUSED_DISPLAYS" "$(list.screens.unused)";}
 	show.version() { printf '%s\n' "$script_name, Version $script_version" "Copyright (C) 2015 by $script_author" "License GNU General Public License (GPL) or later <http://www.gnu.org/licenses/gpl.html>" "" "This is free software; you are free to change and redistribute it." "There is NO WARRANTY, to the extent permitted by law.";exit 0;}
-	# Testings
-	test.modes(){ for s in $(list.screens);do tui-title $s;list.modes $s;done;}
-	test.todo() {
-		cvt 1366 768 60
-		echo xrandr --newmode "1368x768_60.00" 85.25 1368 1440 1576 1784 768 771 781 798 -hsync +vsync
-		echo xrandr --addmode default "1368x768_60.00"
-		echo xrandr --output default --mode "1368x768_60.00"
-		exit
+	show.help() {
+	# Show help screen
+	# Can be transformed to a manpage using txt2man
+		cat <<-EO_SCREEN
+		NAME
+		 		$script_name
+		SYNOPSIS
+		 		$script_name [--help|--version] [-C|--config] [--reset] [--list-connected] [--list-unused]
+		DESCRIPTION
+		 		This is wrapper/wizard around the xrandr application.
+		OPTIONS
+		 		-h|--help		Show this screen and exit
+		 		--version		Show the version and exit
+		 		-C|--config		Edit the configuration
+		 		
+		 		--list-connected	List used slots and exit
+		 		--list-unused		List free slots and exit
+		 		
+		 		--reset			Reset xrandr settings according to configuration
+		 		--switch		Switches the output of the current active one with the unused
+		SEE ALSO
+		 		cvt(1), tui(1), xrandr(1)
+		AUTHORS
+		 		$script_author, $script_authors
+		 
+		EO_SCREEN
+		exit 0
 	}
 #
 #	Action & preparations
@@ -232,7 +269,7 @@
 #
 	GETOPT=$(getopt \
 		--options	"hCL" \
-		--longoptions	"help,version,config,list-connected,reset" \
+		--longoptions	"help,version,config,list-connected,reset,switch" \
 		--name 		"${0##*/}" -- "${@}" \
 	)
 	eval set -- "${GETOPT}";
@@ -254,6 +291,12 @@
 				exit 0
 				;;
 		--reset)	task.reset
+				exit $?
+				;;
+		--switch)	# Switch silently, to be used for WMs hotkey-binding as example
+				job.switch "$(screen.name)"<<-EO_SCRIPT
+				y
+				EO_SCRIPT
 				exit $?
 				;;
 		esac
