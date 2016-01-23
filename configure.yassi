@@ -4,7 +4,7 @@
 #	Project Info
 #
  	APP_NAME=xrandr-tui
- 	APP_VER=0.3.1
+ 	APP_VER="$(tmp=$(\grep _version= bin/xrandr-tui);echo ${tmp/*=};tmp='')"
  	APP_LIC=GPLv3+
  	APP_HOMEPAGE="https://github.com/sri-arjuna/xrandr-tui"
  	AUTHOR_HOMEPAGE="http://linux-scripter.blogspot.ch"
@@ -22,4 +22,6 @@
 #	Docs
 #
  	REQS[make]=txt2man
+ 	REQS[app]=xrandr
+ 	DISTCLEAN[0]="$APP_NAME.1"
  	MAKE[0]="bin/$APP_NAME -h > $APP_NAME.1"
