@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# This configure.yassi was generated on 2016-01-23 using YASSI (1.8.6)
+#
+#	Project Info
+#
+ 	APP_NAME=xrandr-tui
+ 	APP_VER=0.3
+ 	APP_LIC=GPLv3+
+ #	APP_HOMEPAGE="mywebsite.web"
+ 	AUTHOR_HOMEPAGE="http://linux-scripter.blogspot.ch"
+ 	AUTHOR_NAME="Simon Arjuna Erat (sea)"
+ 	AUTHOR_EMAIL="erat.simon æ gmail.com"
+ 	#MAINTAINER_NAME=""
+ 	#MAINTAINER_EMAIL=""
+ 	BUGTRACKER="https://github.com/sri-arjuna/xrandr-tui/issues"
+#
+#	Default target dirs
+#
+ 	BINDIR=bin
+ 	DOCDIR=docs
+ 
