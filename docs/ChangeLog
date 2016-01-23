@@ -1,2 +1,7 @@
+* 2016.01.23 - 0.3.1 - sea
+- 'Reset' now uses the conf file
+- 'Switch' now works from cli too
+- 'help-screen', manpage when installed using configure
+
 * 2016.01.23 - 0.3 - sea
 - Initial commit
