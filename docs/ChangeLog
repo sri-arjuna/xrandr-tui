@@ -1,6 +1,12 @@
+* 2016.01.24 - 0.4 - sea
+* Added:  Mode - Remove (not all modes are removable!)
+* Added:  Mode - Add - Custom
+* Updated: '--mirror' seems to work for now (beware of different resolutions!)
+
 * 2016.01.23 - 0.3.2 - sea
 - Addded:  '--list-used'
-- Updated: '--reset' now works
+- Updated: '--reset' works now
+* Updated: '--switch' works now
 - Updated: Several typos fixed
 - Updated: Now, one can enter the configuration from the main menu
 - Updated: when installed using ./configure, the tmp manpage is now removed (make distclean)

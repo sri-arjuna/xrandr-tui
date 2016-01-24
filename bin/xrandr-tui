@@ -25,7 +25,7 @@
 	! $XDG_SOURCED && source "$XDG_DIRS"
 	LIST_DEFAULT_RESOLUTIONS_BOX="640x480 800x600 1024x768 1280x1024"
 	LIST_DEFAULT_RESOLUTIONS_HD="640x360 854x480 1280x720 1920x1080 2560x1440 3840x2160"
-	LIST_DEFAULT_RESOLUTIONS_WIDE="720x400 720x576 1152x864 1368x768 1280x960 1440x900 1400x1050 1600x900 1680x1050 1600x1200"
+	LIST_DEFAULT_RESOLUTIONS_WIDE="720x400 720x576 1152x864 1280x768 1280x960 1368x768 1440x900 1400x1050 1600x900 1680x1050 1600x1200"
 	DEFAULT_DISPLAY=""
 	DEFAULT_RESOLUTION=""
 	SHOW_HZ=false
@@ -34,7 +34,7 @@
 #	Script info
 #
 	script_name="xrandr-tui"
-	script_version=0.3.2
+	script_version=0.4
 	script_author="Simon Arjuna Erat (sea)"
 	script_homepage="https://github.com/sri-arjuna/xrandr-tui"
 	script_authors=""	# Add your names here, seperated by a comma ','
@@ -52,6 +52,7 @@
 	MSG_ORDER_SOURCE="What is the source display?"
 	MSG_ORDER_TARGET="Add a target?"
 	MSG_SWITCH_INVALID_COUNT='Invalid count of connected displays: !2 = $(list.screens.connected)'
+	MSG_SCREEN_SRC="Use this output slot as source:"
 	MSG_DETECTED_SCREEN_SRC="Detected old active display slot:"
 	MSG_DETECTED_SCREEN_TRGT="Selected new output slot:"
 	MSG_DETECTED_SCREEN_MODE="Use mode/resolution autoselect?"
@@ -59,6 +60,7 @@
 	MSG_SELECT_RES_DISPLAY="Please select the display to change the resolution:"
 	MSG_SELECT_RES="Please select the new resolution for:"
 	MSG_MIRROR_NOTARGET="You have not selected a target for the mirror."
+	MSG_SCREEN_MIRROR_SRC="Detected old active display slot:"
 	MSG_SOURCE_CORRECT="Is this selection correct?"
 	MSG_SOURCE_CORRECT_NOT="The first item you select as target, will be taken as source."
 	MSG_LINEAR_SET_PRIMARY="Set primary screen (left):"
@@ -67,14 +69,19 @@
 	MSG_SET_PRIMARY="Set as primary screen (bottom,left) slot:"
 	MSG_SCREEN_UPDATE="Next screen update in:"
 	MSG_DEFAULT_MAIN="Which is your default display when resetting?"
-	MSG_DEFAULT_MAIN_=""
+	#MSG_DEFAULT_MAIN_=""
 	MSG_DEFAULT_RES="What resolution shall be set when resetting?"
-	MSG_DEFAULT_RES_=""
+	#MSG_DEFAULT_RES_=""
 	MSG_DEFAULT_HZ="Use the refresh rate (hz) of the created modes for the name as well?"
 	MSG_MODE_ADD_TITLE="Add a new mode to slot:"
 	MSG_MODE_ADD_KIND="What kind of mode would you like to add?"
 	MSG_MODE_ADD_DISPLAY="Which display shall be used?"
 	MSG_MODE_ADD_EXISTS="The mode you wanted to add does already exist"
+	MSG_MODE_ADD_NEW="Please enter your desired resolution like: 1280x720"
+	MSG_MODE_ADD_ASK="Are you sure to use this:"
+	MSG_MODE_RM_TITLE="Remove an old mode from slot:"
+	MSG_MODE_RM_ASK="Are you sure to remove this?"
+		
 #
 #	Variables
 #
@@ -91,6 +98,8 @@
 	# Data handling
 	data.get()  { export RAW_DATA="$(${XR}|$GREP -v Screen)" ; }
 	data.show() { echo "$RAW_DATA" ; }
+	data.cvt.get() { DATA_CVT=$(cvt ${res/x/" "} ${DEFAULT_HZ:-60}) ;}
+	data.cvt.show() { echo "$DATA_CVT" ;}
 	# Info of *-marked displays
 	screen.name() { tmp=$(data.show | $GREP -B${LISTLENGTH} "*" | $GREP ^[a-zA-Z] | $AWK '{print $1}' | tail -n1);list.screens | $GREP $tmp; }
 	screen.size() { data.show | $AWK '/*/ {print $1}' ; }
@@ -113,9 +122,8 @@
 		
 		tui-print -E "$MSG_SWITCH_DISP_CUR $cur"
 		! tui-yesno "$MSG_SWITCH_DISP_CHG" && \
-			
 		
-		tui-print -S $? "$MSG_DETECTED_SCREEN_SRC" "$cur"
+		tui-print -S $? "$MSG_DETECTED_SCREEN_SRC $cur"
 		
 		job.switch "$cur"
 	}
@@ -133,22 +141,23 @@
 		(set -x;$XR --output $this --mode $res)
 		exit $?
 	}
-	task.mirror() { 
+	task.mirror() { # SRC TRGT1 TRGT2 ..
 	# Take the first argument as source screen
 	# Mirror all following from that
 		tui-title "${FUNCNAME/task\.}" 
 		ar_passed=($(echo "${@}"))
 		src=${ar_passed[0]}
 		unset ar_passed[0]
-		tui-print -S $? "$MSG_DETECTED_SCREEN_SRC $src"
+		tui-print -S $? "${MSG_SCREEN_MIRROR_SRC} $src"
 		! tui-yesno "$MSG_SOURCE_CORRECT" && tui-print -E "$MSG_SOURCE_CORRECT_NOT"
 		
 		job.reset.all
 		sleep 0.5
-		(set -x;$XR --output $src)
+		(set -x;$XR --output $src --auto)
 		for passed in ${ar_passed[@]}
 		do
-			(set -x;$XR --output $passed --same-as $src --mode $(list.modes $passed|head -n1))
+			thismode=$(list.modes $passed|head -n1)
+			(set -x;$XR --output $passed --same-as $src --mode $thismode)
 			tui-status $? "$MSG_DETECTED_SCREEN_TRGT $passed"
 		
 		done
@@ -178,19 +187,23 @@
 		tui-title "$MSG_MODE_ADD_TITLE $(screen.name)"
 		local list="box hd wide"
 		prefix=LIST_DEFAULT_RESOLUTIONS
-		data.cvt.get() { DATA_CVT=$(cvt ${res/x/" "} ${DEFAULT_HZ:-60}) ;}
-		data.cvt.show() { echo "$DATA_CVT" ;}
 		
 		tui-print -E "$MSG_MODE_ADD_KIND"
 		item=$(tui-select $list)
 		tmp="${prefix}_${item^^}"
 		list_items=$(eval echo "\${${tmp}}" )
+		display=$(screen.name)
 		
 		tui-print -E 
-		tui-print -E "$MSG_SELECT_RES $(screen.name)"
-		res=$(tui-select $list_items)
-		
+		tui-print -E "$MSG_SELECT_RES $display"
+		res=$(tui-select $list_items custom)
+		while [ "$res" = custom ]
+		do	tui-print -E "$MSG_MODE_ADD_NEW"
+			res=$(tui-read)
+			tui-yesno "$MSG_MODE_ADD_ASK $res" || res=custom
+		done
 		data.cvt.get
+		
 		mode_lbl="$(data.cvt.show|$AWK '/Modeline/ {print $2}'|$SED s,\",,g)"
 		mode_numbers="$(data.cvt.show|$AWK '/Modeline/ {print $3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13}')"
 		
@@ -199,23 +212,38 @@
 			exit 1
 		$SHOW_HZ || mode_lbl="${mode_lbl/_*}"
 		$XR --newmode $mode_lbl $mode_numbers
-		$XR --addmode default $mode_lbl
-		$XR --output default --mode $mode_lbl
+		$XR --addmode $display $mode_lbl
+		$XR --output $display --mode $mode_lbl
+	}
+	task.mode.rm() {
+	# Remove a mode from current output
+	#
+		display="$(screen.name)"
+		
+		tui-title "$MSG_MODE_RM_TITLE $display"
+		res_rm=$(tui-select $(list.modes $display))
+		
+		if tui-yesno "${MSG_MODE_RM_ASK} $res_rm ($display)"
+		then	$(set -x;$XR --delmode $display $res_rm)
+			$(set -x;$XR --rmmode "$res_rm")
+			
+		fi
+		return $?
 	}
 	#task.multiline() { tui-title "TODO ${FUNCNAME/task\.}" ; tui-list -1 $@ ; }
 	task.reset() { job.reset.all ; $XR --output $DEFAULT_DISPLAY --mode $DEFAULT_RESOLUTION --primary ; }
 	job.reset.all() { for d in $(list.screens.connected);do $XR --output $d --off;done;}
 	task.config() { tui-conf-editor -H "$script_name ($script_version)" --write-no-exist --option DEFAULT_DISPLAY --values "$($0 --list-connected)" --default "$(screen.name)" --option DEFAULT_RESOLUTION --values "$(list.modes $(tui-conf-get $CONF DEFAULT_DISPLAY))" --default "$(screen.size)" --option DEFAULT_HZ --values "30 60 75 100" --default 60 --option SHOW_HZ --values "true false" --default "false" "$CONF" ;}
 	job.firsttime() { tui-bol-dir "$XCD";touch "$CONF";task.config;}
-	job.switch() { # CUR_SCRN $(screen.name)
+	job.switch() { # CUR_SCRN
 	# Expects two connected displays
-	# Switches the the active to off, and actives the off one
+	# Switches the the active to off, and activateses the off one
 		tui-print -T "${FUNCNAME/task\.}"
 		cur="$1" ; [ -n "$cur" ] 
 		tui-status $? "$MSG_DETECTED_SCREEN_SRC" "$cur" || exit 1
 		
 		new=$(list.screens);RET=$?
-		new="$(echo ${new/$cur})"
+		new="${new/$cur}"
 		tui-print -S $RET "$MSG_DETECTED_SCREEN_TRGT" "$new"
 		
 		tui-yesno "$MSG_DETECTED_SCREEN_MODE" && \
@@ -312,7 +340,7 @@
 				exit $?
 				;;
 		--mirror)	# Switch silently, to be used for WMs hotkey-binding as example
-				task.mirror "$(screen.name)"<<-EO_SCRIPT
+				task.mirror "$DEFAULT_DISPLAY $(list.screens.connected|$SED s,$DEFAULT_DISPLAY,,g)"<<-EO_SCRIPT
 				y
 				EO_SCRIPT
 				exit $?
@@ -355,7 +383,8 @@
 				
 				this=""
 				while 	tui-print -E "$MSG_ORDER_TARGET"
-					this=$(tui-select done $(list.screens.connected))
+					tui-print -E "Src: $SOURCE // Targets: $TARGET"
+					this=$(tui-select done $(list.screens.connected|$SED s,"$SOURCE",,g))
 					[ ! done = $this ]
 				do
 					TARGET+=" $this";this=""
