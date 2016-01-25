@@ -1,6 +1,11 @@
+* 2016.01.25 - 0.4.2 - sea
+* Code:    Massive rework of internal message handling
+* Updated: Switch Display
+* Added:   screenshots/xrandr-tui_remove_mode.jpg
+
 * 2016.01.24 - 0.4 - sea
-* Added:  Mode - Remove (not all modes are removable!)
-* Added:  Mode - Add - Custom
+* Added:   Mode - Remove (not all modes are removable!)
+* Added:   Mode - Add - Custom
 * Updated: '--mirror' seems to work for now (beware of different resolutions!)
 
 * 2016.01.23 - 0.3.2 - sea
