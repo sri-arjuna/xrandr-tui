@@ -18,6 +18,7 @@
 	HOME="$(eval echo ~${USER})"
 	XCD="${XDG_CONFIG_DIR:-$HOME/.config}"
 	XDG_DIRS="${XCD}/user-dirs.dirs"
+	LOG="/tmp/xrandr-tui.log"
 	[ -f "$XDG_DIRS" ] && source "$XDG_DIRS" && XDG_SOURCED=true
 	# Repeate the leading 2 lines, since the initial variable might have changed
 	XCD="${XDG_CONFIG_DIR:-$HOME/.config}"
@@ -76,20 +77,14 @@
 	MSG_TASK_MULTILINE_SET_BREAKPOINTS="Of not equaliy spread (2 lines x 3 outputs), provide the monitors at which $screen_name shall make a new line:"
 	
 	# Task : resolution
-	#MSG_TASK_RESOLUTION_SELECT_DISPLAY="Please select the display to change the resolution:"
-	#MSG_TASK_RESOLUTION_SELECT_RES="Please select the new resolution for:"
 	MSG_TASK_RESOLUTION_DONE="Changed resolution:"
 	
 	# Task : switch
+	MSG_TASK_SWITCH_DONE="Switched output to:"
 	MSG_TASK_SWITCH_INVALID_COUNT='Invalid count of connected displays: !2 = $(list.screens.connected)'
 	
-	#MSG_TASK_SWITCH_DISP_CUR="The current display is:"
-	#MSG_TASK_SWITCH_DISP_NEW="The new display will be:"
-	#MSG_TASK_SWITCH_DISP_CHG="Do you want to use this?"
-	#MSG_TASK_SWITCH_RES="Please select the resolution for:"
-	
 	# Modes : add
-	MSG_TASK_MODE_ADD_TITLE="Add a new mode to slot:"
+	MSG_TASK_MODE_ADD_TITLE="Add a new mode to output:"
 	MSG_TASK_MODE_ADD_KIND="What kind of mode would you like to add?"
 	MSG_TASK_MODE_ADD_DISPLAY="Which display shall be used?"
 	MSG_TASK_MODE_ADD_EXISTS="The mode you wanted to add does already exist"
@@ -100,37 +95,17 @@
 	MSG_MODE_RM_TITLE="Remove an old mode from slot:"
 	MSG_MODE_RM_ASK="Are you sure to remove this?"
 	
-	
-	
-	
-	
 	# Shared
+	MSG_SHARED_CORRECT="Is this correct?"
 	MSG_SHARED_DISPLAY_CURRENT="The currently used display is:"
 	MSG_SHARED_DISPLAY_FOUND="The found output display is:"
 	MSG_SHARED_DISPLAY_NEW="The new output display will be:"
 	MSG_SHARED_DISPLAY_CHANGE_INPUT="Please select the base display:"
 	MSG_SHARED_DISPLAY_CHANGE_OUTPUT="Please select a new output display:"
 	MSG_SHARED_DISPLAY_SELECTED="The selected display is:"
-	MSG_SHARED_CORRECT="Is this correct?"
-	
-	MSG_SHARED_RESOLUTION_CURRENT="The currently used resolution is:"
 	MSG_SHARED_RESOLUTION_CHANGE="Please select a new resolution for:"
 	
-	MSG_SHARED_SELECT_OUTPUT="Selected new output slot:"
-	
-	
-	MSG_DETECTED_SCREEN_SRC="Detected old active display slot:"
-	
 #	
-#	MSG_DETECTED_SCREEN_MODE="Use mode/resolution autoselect?"
-#	MSG_SET_PRIMARY="Set as primary screen (bottom,left) slot:"
-#	MSG_SCREEN_MIRROR_SRC="Detected old active display slot:"
-#	MSG_SCREEN_SRC="Use this output slot as source:"
-#	MSG_SOURCE_CORRECT="Is this selection correct?"
-#	MSG_SOURCE_CORRECT_NOT="The first item you select as target, will be taken as source."
-	
-	
-	
 #
 #	Variables
 #
@@ -163,13 +138,16 @@
 	task.switch() {
 	# Expects two connected displays
 	# Switches the active to off, and uses the unused one
+		# Get default values
 		cur="$(screen.name)"
-		new="$(list.screens.connected|$SED s,$cur,,g)"
-			
+		new=$(echo $(list.screens.connected|$SED s,$cur,,g))
+		
+		# Print title & values
 		tui-title "${FUNCNAME/task\.}"
 		tui-print -E "$MSG_SHARED_DISPLAY_CURRENT" 	"$cur"
 		tui-print -E "$MSG_SHARED_DISPLAY_NEW" 		"$new"
 		
+		# Ask if these values are correct
 		RET=0
 		! tui-yesno "$MSG_SHARED_CORRECT" && \
 			tui-print -E "$MSG_SHARED_DISPLAY_CHANGE_INPUT ($cur)" && \
@@ -177,62 +155,88 @@
 			tui-print -E "$MSG_SHARED_DISPLAY_CHANGE_OUTPUT ($new)" && \
 			RET=1 && \
 			new=$(tui-select $(list.screens.connected))
+		
+		# Print selected target output
 		tui-status $RET "$MSG_SHARED_DISPLAY_SELECTED $new" || exit 1
 		
-		job.switch "$cur" "$new"
+		# Do the final step
+		job.switch $cur $new
 	}
 	task.resolution() { 
 	# Change the resolution for the current active display
 	# Select which display if more than one is active
+		# Print title
 		tui-title "${FUNCNAME/task\.}"
+		
+		# If there is more than one active screen, ask wich one to change
 		[ $(screen.name|grep [a-zA-Z]|wc -w) -gt 1  ] && \
 			tui-print -E "$MSG_SHARED_RESOLUTION_CHANGE" && \
 			this=$(tui-select $(screen.name)) || \
 			this=$(screen.name)
+		
+		# Which output is used?
 		tui-print -E "$MSG_SHARED_RESOLUTION_CHANGE" "$this"
+		
+		# Select resolution
 		res=$(tui-select $(list.modes $this))
 		
-		#(set -x;
-		$XR --output $this --mode $res #)
-		tui-status $? "$MSG_TASK_RESOLUTION_DONE $this @ $res"
+		# Do the magic
+		$XR --output $this --mode $res
+		
+		# Report status
+		tui-status $? "$MSG_TASK_RESOLUTION_DONE" "$this @ $res"
 		exit $?
 	}
 	task.mirror() { # SRC TRGT1 TRGT2 ..
 	# Take the first argument as source screen
 	# Mirror all following from that
-		tui-title "${FUNCNAME/task\.}" 
+		# Prepare variables
 		ar_passed=($(echo "${@}"))
 		src=${ar_passed[0]}
 		unset ar_passed[0]
+		
+		# Print title
+		tui-title "${FUNCNAME/task\.}" 
 		tui-print -S $? "${MSG_SCREEN_MIRROR_SRC} $src"
+		
+		# All good?
 		! tui-yesno "$MSG_SOURCE_CORRECT" && tui-print -E "$MSG_SOURCE_CORRECT_NOT"
 		
+		# Clear and load base output
 		job.reset.all
 		sleep 0.5
-		(set -x;$XR --output $src --auto)
+		$XR --output $src --auto
+		
+		# Now load all mirror'd output
 		for passed in ${ar_passed[@]}
 		do
 			thismode=$(list.modes $passed|head -n1)
-			(set -x;$XR --output $passed --same-as $src --mode $thismode)
+			$XR --output $passed --same-as $src --mode $thismode
 			tui-status $? "$MSG_DETECTED_SCREEN_TRGT $passed"
-		
 		done
 		exit $?
 	}
 	task.linear() {
 	# Take the first argument as source screen
 	# Mirror all following from that
-		tui-title "${FUNCNAME/task\.}" 
+		# Prepare variables
 		ar_passed=(${@})
 		src=${ar_passed[0]}
 		unset ar_passed[0]
 		
+		# Print title
+		tui-title "${FUNCNAME/task\.}" 
+		
+		# Clear and load base output
 		job.reset.all
-		(set -x;$XR --output $src --primary)
+		$XR --output $src --primary
+		
 		tui-print -S $? "$MSG_LINEAR_SET_PRIMARY $src"
+		
+		# Now order them all next to each other
 		for passed in ${ar_passed[@]}
 		do
-			(set -x;$XR --output $passed --right-of $src --mode $(list.modes $passed|head -n1))
+			$XR --output $passed --right-of $src --mode $(list.modes $passed|head -n1)
 			tui-print -S $? "$MSG_LINEAR_SET_LEFT $passed"
 		done
 		exit $?
@@ -240,33 +244,48 @@
 	task.mode.add() {
 	# Add a new mode to current output
 	#
+		# Print title
 		tui-title "$MSG_MODE_ADD_TITLE $(screen.name)"
+		
+		# Prepare variables
 		local list="box hd wide"
 		prefix=LIST_DEFAULT_RESOLUTIONS
-		
-		tui-print -E "$MSG_MODE_ADD_KIND"
-		item=$(tui-select $list)
-		tmp="${prefix}_${item^^}"
-		list_items=$(eval echo "\${${tmp}}" )
 		display=$(screen.name)
 		
+		# Select what kind of resolution list
+		tui-print -E "$MSG_MODE_ADD_KIND"
+		item=$(tui-select $list)
+		
+		# Expand list 
+		tmp="${prefix}_${item^^}"
+		list_items=$(eval echo "\${${tmp}}" )
+		
+		# Select new resolution
 		tui-print -E 
 		tui-print -E "$MSG_SELECT_RES $display"
 		res=$(tui-select $list_items custom)
+		
+		# Add custom resolution
 		while [ "$res" = custom ]
 		do	tui-print -E "$MSG_MODE_ADD_NEW"
 			res=$(tui-read)
 			tui-yesno "$MSG_MODE_ADD_ASK $res" || res=custom
 		done
-		data.cvt.get
 		
+		# Get mode parameters
+		data.cvt.get
 		mode_lbl="$(data.cvt.show|$AWK '/Modeline/ {print $2}'|$SED s,\",,g)"
 		mode_numbers="$(data.cvt.show|$AWK '/Modeline/ {print $3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13}')"
 		
+		# Set mode-name according to preference
+		$DEFAULT_SHOW_HZ || mode_lbl="${mode_lbl/_*}"
+		
+		# Check for new mode existence (double name)
 		list.modes $(screen.name) | $GREP -q "${mode_lbl/_*}" && \
 			tui-print -S 1 "$MSG_MODE_ADD_EXISTS" && \
 			exit 1
-		$DEFAULT_SHOW_HZ || mode_lbl="${mode_lbl/_*}"
+		
+		# Where magic becomes reality
 		$XR --newmode $mode_lbl $mode_numbers
 		$XR --addmode $display $mode_lbl
 		$XR --output $display --mode $mode_lbl
@@ -274,14 +293,17 @@
 	task.mode.rm() {
 	# Remove a mode from current output
 	#
+		# Prepare variable
 		display="$(screen.name)"
 		
+		# Print title
 		tui-print -T "${FUNCNAME/task\.} $display"
 		res_rm=$(tui-select $(list.modes $display))
 		
+		# Really remove this?
 		if tui-yesno "${MSG_MODE_RM_ASK} $res_rm ($display)"
-		then	$(set -x;$XR --delmode $display $res_rm)
-			$(set -x;$XR --rmmode "$res_rm")
+		then	(set -x;$XR --delmode $display $res_rm)
+			(set -x;$XR --rmmode "$res_rm")
 		fi
 		return $?
 	}
@@ -290,25 +312,30 @@
 	task.config() { 
 	# Show the configuration editor
 	# Upon every call it rewrites the default values if none exists
+		display="$(screen.name)"
 		tui-conf-editor	\
 			-H "$script_name ($script_version)" \
 			-T "$MSG_LABEL_CONFIG_TITLE" \
 			--option DEFAULT_DISPLAY \
 				--label "$MSG_LABEL_CONFIG_DEFAULT_DISPLAY" \
 				--values "$($0 --list-connected)" \
-				--default "$(screen.name)" \
+				--default "$display" \
 			--option DEFAULT_RESOLUTION \
 				--label "$MSG_LABEL_CONFIG_DEFAULT_RESOLUTION" \
 				--values "$(list.modes $(screen.name))" \
 				--default "$(screen.size)" \
-			--option DEFAULT_LINEAR_ORDER \
-				--label "$MSG_LABEL_CONFIG_DEFAULT_LINEAR_ORDER" \
-				--values "$(list.screens.connected)" \
-				--default "$(list.screens.connected|$SED s,$(screen.name),,g)" \
 			--option DEFAULT_MIRROR_SOURCE \
 				--label "$MSG_LABEL_CONFIG_DEFAULT_MIRROR_SOURCE" \
 				--values "$(list.screens.connected)" \
-				--default "$(screen.name)" \
+				--default "$display" \
+			--option DEFAULT_LINEAR_SOURCE \
+				--label "$MSG_LABEL_CONFIG_DEFAULT_LINEAR_ORDER" \
+				--values "$(list.screens.connected)" \
+				--default "$display" \
+			--option DEFAULT_LINEAR_ORDER \
+				--label "$MSG_LABEL_CONFIG_DEFAULT_LINEAR_ORDER" \
+				--values "$(list.screens.connected)" \
+				--default "$(list.screens.connected|$SED s,$disply,,g)" \
 			--option DEFAULT_HZ \
 				--label "$MSG_LABEL_CONFIG_DEFAULT_HZ" \
 				--values "30 60 75 100" \
@@ -333,13 +360,19 @@
 		if [ -z "$3" ]
 		then	# Ask for the screen resolution
 			tui-print -E
-			tui-print -E "$MSG_SHARED_RESOLUTION_CHANGE" "$2"
+			tui-print -E "$MSG_SHARED_RESOLUTION_CHANGE $2"
 			MODE=$(tui-select $(list.modes $2 ))
 		else	# Get automatic
 			MODE=$($XR | $GREP -A$LISTLENGTH $2 | $AWK '/+/ {print $1}'|head -n1)
 		fi	
-		(set -x;$XR --output $1 --off)
-		(set -x;$XR --output $2 --mode $MODE)
+		
+		# The magic happens
+		$XR --output $1 --off
+		$XR --output $2 --mode $MODE
+		RET=$?
+		
+		# Only print message if menu was used
+		[ -z "$3" ] && tui-print -E && tui-status $RET "$MSG_TASK_SWITCH_DONE" "$2 @ $MODE"
 		exit $RET
 	}
 #
@@ -449,23 +482,29 @@
 #	Display
 #
 	while :;do ! $first && tui-wait $WAIT "$MSG_MENU_UPDATE" || first=false ; clear
+		# Print header and title
 		tui-print -H "$MSG_MENU_HEADER_LEFT" "$MSG_MENU_HEADER_RIGHT"
 		tui-print -T "$MSG_MENU_CONFIG_PREVIEW"
+		
+		# Show current setting
 		show.config.current
 		
+		# Menu intro
 		tui-print -T "$MSG_MENU_TITLE"
 		tui-print -E "$MSG_MENU_CONFIG_INTRO"
 		
-		# Get action
+		# Get menu action
 		action=$(tui-select quit $(list.menu))
+		
 		# Quit or define order of displays
 		if [ "$action" = "quit" ]
-		then	break
-			task.$action
+		then	# Back to terminal or close termnal window
+			break # task.$action
 		elif [ -z "$ORDER" ]
 		then	case "$action" in
 			linear|multiline)
 				item=""
+				# Prepare order of screens
 				while 	[ ! done = "$item" ]
 				do
 					ORDER+=" $item"
@@ -477,9 +516,11 @@
 				done
 				;;
 			mirror)
+				# Select base output
 				tui-print -E "$MSG_SHARED_DISPLAY_CHANGE_INPUT"
 				SOURCE=$(tui-select $(list.screens.connected))
 				
+				# Select mirrors
 				this=""
 				while 	tui-print -E "$MSG_SHARED_DISPLAY_CHANGE_OUTPUT"
 					tui-print -E "Src: $SOURCE" "Targets: $TARGET"
@@ -491,7 +532,8 @@
 				[ -z "$TARGET" ] && tui-print -S 1 "$MSG_TASK_MIRROR_NOTARGET" && exit 1
 				ORDER="$SOURCE $TARGET"
 				;;
-			switch)	[ 2 -ne $(list.screens.connected|wc -w) ] && \
+			switch)	# 2 connected outputs are required to switch
+				[ 2 -ne $(list.screens.connected|wc -w) ] && \
 					tui-print -S 1 "$MSG_TASK_SWITCH_INVALID_COUNT" && \
 					exit 1
 				;;
